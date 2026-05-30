@@ -1,0 +1,52 @@
+{
+  "entities": {
+    "category": {
+      "title": "Category",
+      "description": "An expense category classification",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "expense_head": {
+      "title": "ExpenseHead",
+      "description": "An expense item subcategory, linked to a parent category",
+      "type": "object",
+      "properties": {
+        "categoryId": { "type": "string" },
+        "category_id": { "type": "string" },
+        "name": { "type": "string" }
+      },
+      "required": ["categoryId", "name"]
+    },
+    "global_data": {
+      "title": "Global Data",
+      "description": "Sync folder encapsulating rig states, site records, logs, and advance registries",
+      "type": "object",
+      "properties": {
+        "userName": { "type": "string" },
+        "sites": { "type": "array" },
+        "drillingEntries": { "type": "array" },
+        "opexEntries": { "type": "array" },
+        "dceEntries": { "type": "array" },
+        "advanceEntries": { "type": "array" },
+        "drafts": { "type": "object" }
+      }
+    }
+  },
+  "firestore": {
+    "categories": {
+      "schema": "category",
+      "description": "Lists the active master expense categories"
+    },
+    "expense_heads": {
+      "schema": "expense_head",
+      "description": "Lists subcategory items linked to expense categories"
+    },
+    "global_data/shared_rig_logs": {
+      "schema": "global_data",
+      "description": "Rig log spreadsheet documents and offline drift cache synchronized to single global file"
+    }
+  }
+}

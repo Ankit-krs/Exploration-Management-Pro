@@ -1,0 +1,28 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default-deny catch-all rule
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Since login/auth capabilities were completely removed from this client application,
+    // all reads and writes run under an unauthenticated session (request.auth is null).
+    // To fix permissions issues, we allow public read and write access to the operational segments.
+
+    // Categories taxonomy master collection
+    match /categories/{categoryId} {
+      allow read, write: if true;
+    }
+
+    // Expense heads subcategories collection
+    match /expense_heads/{expenseHeadId} {
+      allow read, write: if true;
+    }
+
+    // Shared rig logsheets and logs collections
+    match /global_data/{documentId} {
+      allow read, write: if true;
+    }
+  }
+}
