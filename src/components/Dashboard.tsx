@@ -80,11 +80,11 @@ export const Dashboard: React.FC = () => {
   const activeDceItems = siteDceLogs.filter(e => e.status === 'Active');
   const activeStandingHoldCost = activeDceItems.reduce((sum, e) => sum + e.per_day_cost, 0);
 
-  // Cash Advance imprest balance = Total cash advances - Direct OPEX
+  // Cash Advance balance = Total cash advances - Direct OPEX
   const totalSiteAdvances = advanceEntries
     .filter(e => e.siteId === activeSiteId)
     .reduce((sum, e) => sum + e.amount, 0);
-  const availableImprestBalance = totalSiteAdvances - totalDirectOpex;
+  const availableAdvanceBalance = totalSiteAdvances - totalDirectOpex;
 
   const handleDrillSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -223,7 +223,7 @@ export const Dashboard: React.FC = () => {
           <div className="absolute top-0 right-0 p-3 opacity-[0.02]/80 dark:opacity-[0.04] pointer-events-none">
             <TrendingUp className="w-16 h-16" />
           </div>
-          <span className="text-slate-900 dark:text-white font-extrabold text-sm md:text-base tracking-widest uppercase mb-1 relative z-10">
+          <span className="text-slate-900 dark:text-white font-extrabold text-sm md:text-base tracking-[0.06em] uppercase mb-1 relative z-10">
             Total Drilling
           </span>
           <div className="relative z-10 font-sans font-bold text-3xl text-gray-950 dark:text-white flex items-baseline justify-center gap-0.5">
@@ -239,7 +239,7 @@ export const Dashboard: React.FC = () => {
           <div className="absolute top-0 right-0 p-3 opacity-[0.02]/85 dark:opacity-[0.04] pointer-events-none">
             <IndianRupee className="w-16 h-16" />
           </div>
-          <span className="text-slate-900 dark:text-white font-extrabold text-sm md:text-base tracking-widest uppercase mb-1 relative z-10">
+          <span className="text-slate-900 dark:text-white font-extrabold text-sm md:text-base tracking-[0.06em] uppercase mb-1 relative z-10">
             Total Expense
           </span>
           <div className="relative z-10 font-sans font-bold text-3xl text-gray-950 dark:text-white mb-1">
@@ -255,7 +255,7 @@ export const Dashboard: React.FC = () => {
         {/* Rate Per Meter (RPM) Cost Analysis */}
         <div id="card-rpm" className="bg-slate-950 dark:bg-slate-900 border border-transparent dark:border-slate-800 rounded-[24px] p-6 flex flex-col items-center justify-center text-center h-32 transition-all hover:shadow-md relative overflow-hidden">
           <div className="absolute -bottom-4 -right-4 w-20 h-20 bg-blue-600 rounded-full blur-[35px] opacity-20 pointer-events-none"></div>
-          <span className="text-white font-extrabold text-sm md:text-base tracking-widest uppercase mb-1 relative z-10">
+          <span className="text-white font-extrabold text-sm md:text-base tracking-[0.06em] uppercase mb-1 relative z-10">
             UNIT DRILLING COST
           </span>
           <div className="relative z-10 font-sans font-bold text-3xl text-white flex items-baseline justify-center gap-0.5 mb-1">
@@ -276,7 +276,7 @@ export const Dashboard: React.FC = () => {
       <div id="dce-subtle-insights-strip" className="grid grid-cols-3 gap-6 p-4.5 bg-white dark:bg-slate-900 border border-gray-200/90 dark:border-slate-800 rounded-[24px] text-center shadow-xs">
          
          <div className="border-r border-gray-100 dark:border-slate-800/80 last:border-0 pl-1 flex flex-col items-center justify-center">
-          <span className="text-sm text-slate-900 dark:text-white font-extrabold uppercase tracking-widest block mb-0.5">
+          <span className="text-sm text-slate-900 dark:text-white font-extrabold uppercase tracking-[0.06em] block mb-0.5">
              Daily Holding Cost
            </span>
            <span className="text-sm font-sans font-bold text-emerald-600 dark:text-emerald-400">
@@ -285,7 +285,7 @@ export const Dashboard: React.FC = () => {
          </div>
  
          <div className="border-r border-gray-100 dark:border-slate-800/80 last:border-0">
-          <span className="text-sm text-slate-900 dark:text-white font-extrabold uppercase tracking-widest block mb-0.5">
+          <span className="text-sm text-slate-900 dark:text-white font-extrabold uppercase tracking-[0.06em] block mb-0.5">
              Running Total
            </span>
            <span className="text-sm font-sans font-bold text-gray-900 dark:text-white">
@@ -294,11 +294,11 @@ export const Dashboard: React.FC = () => {
          </div>
  
          <div className="last:border-0 pr-1">
-          <span className="text-sm text-slate-900 dark:text-white font-extrabold uppercase tracking-widest block mb-0.5">
+          <span className="text-sm text-slate-900 dark:text-white font-extrabold uppercase tracking-[0.06em] block mb-0.5">
              Balance
            </span>
-           <span className={`text-sm font-sans font-bold ${availableImprestBalance < 0 ? 'text-rose-500 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-            ₹{availableImprestBalance.toLocaleString('en-IN')}
+           <span className={`text-sm font-sans font-bold ${availableAdvanceBalance < 0 ? 'text-rose-500 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+            ₹{availableAdvanceBalance.toLocaleString('en-IN')}
           </span>
         </div>
       </div>
@@ -627,7 +627,7 @@ export const Dashboard: React.FC = () => {
               <h3 className="text-base font-bold text-gray-950 dark:text-white">Delete Operational Workspace?</h3>
             </div>
             <p className="text-xs text-gray-500 dark:text-gray-450 leading-relaxed mb-5">
-              Warning: Deleting site <strong className="text-gray-900 dark:text-gray-200">"{activeSite?.name}"</strong> will permanently destroy all linked drilling records, direct OPEX ledgers, imprests, and standing holding costs of this site. This process cannot be reversed.
+              Warning: Deleting site <strong className="text-gray-900 dark:text-gray-200">"{activeSite?.name}"</strong> will permanently destroy all linked drilling records, direct OPEX ledgers, advances, and standing holding costs of this site. This process cannot be reversed.
             </p>
             <div className="flex items-center gap-2.5">
               <button

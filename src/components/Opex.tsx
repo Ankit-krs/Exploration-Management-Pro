@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useDrillTrack, getTodayStr } from '../context/DrillTrackContext';
 import { exportOpexToExcel } from '../utils/exportUtils';
 import { 
@@ -55,12 +55,41 @@ export const Opex: React.FC = () => {
   const opexAmount = drafts.opex?.amount || '';
   const opexRemarks = drafts.opex?.remarks || '';
 
+  const sortedCategories = useMemo(() => {
+    return [...categories].sort((a, b) => {
+      const aOrder = a.sortOrder ?? Number.MAX_SAFE_INTEGER;
+      const bOrder = b.sortOrder ?? Number.MAX_SAFE_INTEGER;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return a.name.localeCompare(b.name);
+    });
+  }, [categories]);
+
+  const sortedExpenseHeads = useMemo(() => {
+    return [...expenseHeads].sort((a, b) => {
+      if (a.categoryId !== b.categoryId) return a.categoryId.localeCompare(b.categoryId);
+      const aOrder = a.sortOrder ?? Number.MAX_SAFE_INTEGER;
+      const bOrder = b.sortOrder ?? Number.MAX_SAFE_INTEGER;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return a.name.localeCompare(b.name);
+    });
+  }, [expenseHeads]);
+
   // Filter opex logs belonging to the active site
   const siteOpexEntries = opexEntries.filter(e => e.siteId === activeSiteId);
   const siteOpexTotal = siteOpexEntries.reduce((sum, e) => sum + e.amount, 0);
 
   // Heads list associated with current selected category
-  const filteredCategoryHeads = expenseHeads.filter(h => h.categoryId === opexCatId);
+  const filteredCategoryHeads = sortedExpenseHeads.filter(h => h.categoryId === opexCatId);
+
+  useEffect(() => {
+    if (!opexHeadId) return;
+    const valid = filteredCategoryHeads.some((h) => h.id === opexHeadId);
+    if (!valid) {
+      updateDraft('opex', 'headId', '');
+    }
+  }, [opexCatId, opexHeadId, filteredCategoryHeads, updateDraft]);
+
+  const formatCategoryLabel = (cat: { name: string; sortOrder?: number | null }) => cat.name;
 
   const handleOpexSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -127,7 +156,7 @@ export const Opex: React.FC = () => {
   return (
     <div id="opex-page" className="space-y-6 md:space-y-8 animate-fade-in text-gray-900 dark:text-gray-100 font-sans">
       
-      {/* Imprest Section Header */}
+      {/* Advance Section Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-1.5 border-b border-gray-100 dark:border-slate-800">
         <div>
           <span className="text-[10px] uppercase font-bold tracking-wider text-blue-500 dark:text-blue-400 block mb-1">
@@ -211,9 +240,9 @@ export const Opex: React.FC = () => {
                 className="w-full h-11 px-4 rounded-xl border border-gray-200 dark:border-slate-700 bg-transparent text-gray-950 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/35 focus:border-blue-500 text-sm font-semibold cursor-pointer disabled:opacity-50"
               >
                 <option value="" className="bg-white dark:bg-slate-900 text-gray-500 dark:text-gray-400 text-sm font-semibold">Choose Expense Category</option>
-                {categories.map(cat => (
+                {sortedCategories.map(cat => (
                   <option key={cat.id} className="bg-white dark:bg-slate-900 text-gray-900 dark:text-white text-sm font-semibold" value={cat.id}>
-                    {cat.name}
+                    {formatCategoryLabel(cat)}
                   </option>
                 ))}
               </select>
@@ -340,12 +369,12 @@ export const Opex: React.FC = () => {
 
           <div className="border border-gray-100 dark:border-slate-800 rounded-xl overflow-hidden">
             {/* Headers row */}
-            <div className="grid grid-cols-[1.2fr_1.fr_1.2fr_1.1fr_1.5fr_100px] bg-gray-50/70 dark:bg-slate-800/60 p-3 text-[11px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider text-left border-b border-gray-150 dark:border-slate-800">
+            <div className="grid grid-cols-[1.1fr_1.2fr_1.2fr_1.4fr_0.9fr_92px] bg-gray-50/70 dark:bg-slate-800/60 p-3 text-[11px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider text-left border-b border-gray-150 dark:border-slate-800">
               <div>Date</div>
               <div>Category</div>
               <div>Expense Head</div>
-              <div className="text-right">Amount</div>
               <div>Remarks</div>
+              <div className="text-right">Amount</div>
               <div className="text-center">Actions</div>
             </div>
 
@@ -360,16 +389,17 @@ export const Opex: React.FC = () => {
                   .sort((a, b) => b.date.localeCompare(a.date))
                   .map((item, idx) => {
                     const formattedDate = item.date.split('-').reverse().join('/');
-                    const catName = categories.find(c => c.id === item.categoryId)?.name || 'Unknown';
+                    const catObj = sortedCategories.find(c => c.id === item.categoryId);
+                    const catName = catObj ? formatCategoryLabel(catObj) : 'Unknown';
                     const headName = expenseHeads.find(eh => eh.id === item.expenseHeadId)?.name || 'Unknown';
                     const isEditing = editingOpexId === item.id;
 
                     return (
-                      <div 
+                      <div
                         key={item.id}
-                        className="grid grid-cols-[1.2fr_1.fr_1.2fr_1.1fr_1.5fr_100px] p-3 text-xs font-semibold text-gray-700 dark:text-gray-300 items-center hover:bg-gray-50/50 dark:hover:bg-slate-800/20 transition-colors"
+                        className="grid grid-cols-[1.1fr_1.2fr_1.2fr_1.4fr_0.9fr_92px] p-3 text-xs font-semibold text-gray-700 dark:text-gray-300 items-center hover:bg-gray-50/50 dark:hover:bg-slate-800/20 transition-colors"
                       >
-                        <div>{formattedDate}</div>
+                        <div className="text-gray-900 dark:text-white">{formattedDate}</div>
                         
                         {isEditing ? (
                           <>
@@ -382,8 +412,8 @@ export const Opex: React.FC = () => {
                                 }}
                                 className="w-full h-8 text-xs px-1.5 border border-gray-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 focus:outline-none"
                               >
-                                {categories.map(c => (
-                                  <option key={c.id} value={c.id}>{c.name}</option>
+                                {sortedCategories.map(c => (
+                                  <option key={c.id} value={c.id}>{formatCategoryLabel(c)}</option>
                                 ))}
                               </select>
                             </div>
@@ -394,18 +424,10 @@ export const Opex: React.FC = () => {
                                 className="w-full h-8 text-xs px-1.5 border border-gray-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 focus:outline-none"
                                 disabled={!editCatIdVal}
                               >
-                                {expenseHeads.filter(eh => eh.categoryId === editCatIdVal).map(eh => (
+                                {sortedExpenseHeads.filter(eh => eh.categoryId === editCatIdVal).map(eh => (
                                   <option key={eh.id} value={eh.id}>{eh.name}</option>
                                 ))}
                               </select>
-                            </div>
-                            <div className="pl-1.5">
-                              <input
-                                type="number"
-                                value={editAmountVal}
-                                onChange={(e) => setEditAmountVal(e.target.value)}
-                                className="w-full h-8 text-right px-1.5 border border-gray-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 font-mono text-xs focus:outline-none"
-                              />
                             </div>
                             <div className="pl-1.5">
                               <input
@@ -415,16 +437,24 @@ export const Opex: React.FC = () => {
                                 className="w-full h-8 px-1.5 border border-gray-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-xs focus:outline-none"
                               />
                             </div>
+                            <div className="pl-1.5">
+                              <input
+                                type="number"
+                                value={editAmountVal}
+                                onChange={(e) => setEditAmountVal(e.target.value)}
+                                className="w-full h-8 text-right px-1.5 border border-gray-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 font-mono text-xs focus:outline-none"
+                              />
+                            </div>
                           </>
                         ) : (
                           <>
                             <div className="truncate text-gray-500 dark:text-gray-400 pr-1.5">{catName}</div>
                             <div className="truncate text-gray-900 dark:text-white font-bold pr-1.5">{headName}</div>
-                            <div className="text-right font-mono font-bold text-gray-950 dark:text-white pr-2">
-                              ₹{item.amount.toLocaleString('en-IN')}
-                            </div>
                             <div className="truncate text-gray-400 dark:text-gray-550 pr-1" title={item.remarks}>
                               {item.remarks || '-'}
+                            </div>
+                            <div className="text-right font-mono font-bold text-gray-950 dark:text-white pr-2">
+                              ₹{item.amount.toLocaleString('en-IN')}
                             </div>
                           </>
                         )}
@@ -555,7 +585,10 @@ export const Opex: React.FC = () => {
                   Category Linked
                 </label>
                 <div className="w-full h-11 px-4 rounded-xl bg-gray-50 dark:bg-slate-800 flex items-center border border-transparent text-xs font-bold text-gray-500 dark:text-gray-400 select-none">
-                  {categories.find(c => c.id === opexCatId)?.name || 'Default'}
+                  {(() => {
+                    const linked = sortedCategories.find(c => c.id === opexCatId);
+                    return linked ? formatCategoryLabel(linked) : 'Default';
+                  })()}
                 </div>
               </div>
               <div>
@@ -595,3 +628,4 @@ export const Opex: React.FC = () => {
     </div>
   );
 };
+

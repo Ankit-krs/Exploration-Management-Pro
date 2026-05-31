@@ -1,63 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { 
-  onSnapshot, 
-  doc, 
-  setDoc, 
-  getDoc,
-  collection, 
-  getDocs, 
-  addDoc, 
-  deleteDoc, 
-  updateDoc 
-} from 'firebase/firestore';
-import { db, auth } from '../lib/firebase';
-
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-    emailVerified?: boolean | null;
-    isAnonymous?: boolean | null;
-    tenantId?: string | null;
-    providerInfo?: {
-      providerId?: string | null;
-      email?: string | null;
-    }[];
-  }
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth?.currentUser?.uid || null,
-      email: auth?.currentUser?.email || null,
-      emailVerified: auth?.currentUser?.emailVerified || null,
-      isAnonymous: auth?.currentUser?.isAnonymous || null,
-      tenantId: auth?.currentUser?.tenantId || null,
-      providerInfo: auth?.currentUser?.providerData?.map(provider => ({
-        providerId: provider.providerId,
-        email: provider.email,
-      })) || []
-    },
-    operationType,
-    path
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-}
+import { advanceApi, dceApi, drillingApi, ensureBackendSession, opexApi, siteApi } from '../api';
+import { ApiError } from '../api/http';
 import { 
   User, 
   UserRole,
@@ -145,7 +88,7 @@ export const DrillTrackPropsProvider: React.FC<{ children: React.ReactNode }> = 
   const [activeTab, setActiveTab] = useState<string>(() => localStorage.getItem('drilltrack_tab') || 'dashboard');
   const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem('theme') as 'light' | 'dark') || 'light');
   
-  // Imprest and Rig operations data states
+  // Advance and Rig operations data states
   const [sites, setSites] = useState<Site[]>(() => {
     const cached = localStorage.getItem('dt_sites_global');
     return cached ? JSON.parse(cached) : [];
@@ -168,7 +111,7 @@ export const DrillTrackPropsProvider: React.FC<{ children: React.ReactNode }> = 
     return cached ? JSON.parse(cached) : [];
   });
   
-  // Taxonomy states (budget groups loaded from firestore)
+  // Taxonomy states
   const [categories, setCategories] = useState<Category[]>([]);
   const [expenseHeads, setExpenseHeads] = useState<ExpenseHead[]>([]);
   
@@ -242,168 +185,109 @@ export const DrillTrackPropsProvider: React.FC<{ children: React.ReactNode }> = 
 
   // Permissions helper always returns true (fully administrative write-access mode)
 
-  // Sync category taxonomy
+  // Initial backend sync
   useEffect(() => {
-    if (!user) return;
-    const fetchTaxonomy = async () => {
-      let catsSnap, headsSnap;
+    let cancelled = false;
+    (async () => {
       try {
-        catsSnap = await getDocs(collection(db, 'categories'));
-      } catch (e) {
-        handleFirestoreError(e, OperationType.GET, 'categories');
-        return;
-      }
-
-      try {
-        headsSnap = await getDocs(collection(db, 'expense_heads'));
-      } catch (e) {
-        handleFirestoreError(e, OperationType.GET, 'expense_heads');
-        return;
-      }
-      
-      try {
-        const catList: Category[] = [];
-        catsSnap.forEach(c => {
-          catList.push({ id: c.id, name: c.data().name || '' });
-        });
-        
-        const headList: ExpenseHead[] = [];
-        headsSnap.forEach(h => {
-          const dat = h.data();
-          headList.push({
+        setSyncStatus('restoring');
+        const token = await ensureBackendSession();
+        if (!token || cancelled) return;
+        const [siteResult, drillingResult, catResult, headResult, opexResult, dceResult, advanceResult] = await Promise.all([
+          siteApi.list(token),
+          drillingApi.list(token),
+          opexApi.listCategories(token),
+          opexApi.listExpenseHeads(token),
+          opexApi.listOpexEntries(token),
+          dceApi.list(token),
+          advanceApi.list(token)
+        ]);
+        if (cancelled) return;
+          const mappedSites: Site[] = siteResult.data.map((s) => ({
+            id: s.id,
+            name: s.name,
+            createdBy: 'backend',
+            updatedBy: 'backend',
+            updatedAt: s.updatedAt
+          }));
+          const mappedDrilling: DrillingEntry[] = drillingResult.data.map((d) => ({
+            id: d.id,
+            siteId: d.siteId,
+            date: String(d.date).slice(0, 10),
+            meters: typeof d.meters === 'number' ? d.meters : parseFloat(d.meters),
+            boreholeNumber: d.boreholeNumber || '',
+            createdBy: 'backend',
+            updatedBy: 'backend',
+            updatedAt: d.updatedAt
+          }));
+          const mappedCategories: Category[] = catResult.data.map((c) => ({
+            id: c.id,
+            name: c.name,
+            sortOrder: c.sortOrder ?? null
+          }));
+          const mappedHeads: ExpenseHead[] = headResult.data.map((h) => ({
             id: h.id,
-            categoryId: dat.categoryId || dat.category_id || '',
-            name: dat.name || ''
-          });
-        });
-        
-        if (catList.length === 0) {
-          const fallbackCats: Category[] = [
-            { id: 'cat-fuel', name: 'Fuel & Lubricants' },
-            { id: 'cat-spares', name: 'Spares & Tools' },
-            { id: 'cat-labour', name: 'Site Labour & Wages' },
-            { id: 'cat-mess', name: 'Mess & Rationing' },
-            { id: 'cat-logistic', name: 'Logistic Hire & Transports' },
-            { id: 'cat-misc', name: 'Miscellaneous & Emergency' }
-          ];
-          const fallbackHeads: ExpenseHead[] = [
-            { id: 'head-hsd', categoryId: 'cat-fuel', name: 'High Speed Diesel (HSD)' },
-            { id: 'head-mobil', categoryId: 'cat-fuel', name: 'Engine Mobil / Oil' },
-            { id: 'head-hydraulic', categoryId: 'cat-fuel', name: 'Hydraulic Oil' },
-            { id: 'head-grease', categoryId: 'cat-fuel', name: 'Grease' },
-            { id: 'head-bits', categoryId: 'cat-spares', name: 'Drilling Bits' },
-            { id: 'head-hammer', categoryId: 'cat-spares', name: 'Hammer & Button Bits' },
-            { id: 'head-rods', categoryId: 'cat-spares', name: 'Drill Rods / Casing' },
-            { id: 'head-wages', categoryId: 'cat-labour', name: 'Driller Wages' },
-            { id: 'head-salary', categoryId: 'cat-labour', name: 'Assistant Salaries' },
-            { id: 'head-rent', categoryId: 'cat-logistic', name: 'Water Tanker Rental' },
-            { id: 'head-tractor', categoryId: 'cat-logistic', name: 'Hired Tractor / Vehicle' },
-            { id: 'head-ration', categoryId: 'cat-mess', name: 'Groceries / Ration' },
-            { id: 'head-water', categoryId: 'cat-mess', name: 'Drinking Water Supply' },
-            { id: 'head-repair', categoryId: 'cat-misc', name: 'Emergency Field Repairs' },
-            { id: 'head-medical', categoryId: 'cat-misc', name: 'First Aid & Medicals' }
-          ];
-
-          setCategories(fallbackCats);
-          setExpenseHeads(fallbackHeads);
-
-          // Attempt to seed Firestore collections asynchronously in the background so that it is persisted
-          if (navigator.onLine) {
-            (async () => {
-              try {
-                for (const fc of fallbackCats) {
-                  const docRef = await addDoc(collection(db, 'categories'), { name: fc.name });
-                  const matchingHeads = fallbackHeads.filter(h => h.categoryId === fc.id);
-                  for (const mh of matchingHeads) {
-                    await addDoc(collection(db, 'expense_heads'), {
-                      categoryId: docRef.id,
-                      category_id: docRef.id,
-                      name: mh.name
-                    });
-                  }
-                }
-              } catch (se) {
-                console.warn('Silent database seeding skipped/failed:', se);
-              }
-            })();
-          }
-        } else {
-          setCategories(catList);
-          setExpenseHeads(headList);
-        }
+            categoryId: h.categoryId,
+            name: h.name,
+            sortOrder: h.sortOrder ?? null
+          }));
+          const mappedOpex: OpexEntry[] = opexResult.data.map((o) => ({
+            id: o.id,
+            siteId: o.siteId,
+            categoryId: o.categoryId,
+            expenseHeadId: o.expenseHeadId,
+            amount: typeof o.amount === 'number' ? o.amount : parseFloat(o.amount),
+            date: String(o.date).slice(0, 10),
+            remarks: o.remarks || '',
+            createdBy: 'backend',
+            updatedBy: 'backend',
+            updatedAt: o.updatedAt
+          }));
+          const mappedDce: DceEntry[] = dceResult.data.map((d) => ({
+            id: d.id,
+            site_id: d.siteId,
+            cost_head: d.costHead,
+            per_day_cost: typeof d.perDayCost === 'number' ? d.perDayCost : parseFloat(d.perDayCost),
+            start_date: String(d.startDate).slice(0, 10),
+            status: d.status === 'ACTIVE' ? 'Active' : d.status === 'PAUSED' ? 'Paused' : 'Stopped',
+            remarks: d.remarks || '',
+            created_at: String(d.createdAt).slice(0, 10),
+            paused_at: d.pausedAt ? String(d.pausedAt).slice(0, 10) : null,
+            stopped_at: d.stoppedAt ? String(d.stoppedAt).slice(0, 10) : null,
+            total_paused_days: d.totalPausedDays,
+            createdBy: 'backend',
+            updatedBy: 'backend',
+            updatedAt: d.updatedAt
+          }));
+          const mappedAdvances: AdvanceEntry[] = advanceResult.data.map((a) => ({
+            id: a.id,
+            siteId: a.siteId,
+            date: String(a.date).slice(0, 10),
+            amount: typeof a.amount === 'number' ? a.amount : parseFloat(a.amount),
+            remarks: a.remarks || '',
+            createdBy: 'backend',
+            updatedBy: 'backend',
+            updatedAt: a.updatedAt
+          }));
+          setSites(mappedSites);
+          setDrillingEntries(mappedDrilling);
+          setCategories(mappedCategories);
+          setExpenseHeads(mappedHeads);
+          setOpexEntries(mappedOpex);
+          setDceEntries(mappedDce);
+          setAdvanceEntries(mappedAdvances);
+        setSyncStatus('saved');
+        initialLoadCompleted.current = true;
       } catch (e) {
-        console.error('Failed to load taxonomy:', e);
+        console.error('Backend site sync failed:', e);
+        setSyncStatus('offline_local');
+        initialLoadCompleted.current = true;
       }
+    })();
+
+    return () => {
+      cancelled = true;
     };
-    fetchTaxonomy();
-  }, [user]);
-
-  // Sync database with Firestore Global Document ("shared_rig_logs")
-  useEffect(() => {
-    if (!user) {
-      setSites([]);
-      setDrillingEntries([]);
-      setOpexEntries([]);
-      setDceEntries([]);
-      setAdvanceEntries([]);
-      setSyncStatus('idle');
-      initialLoadCompleted.current = false;
-      return;
-    }
-
-    setSyncStatus('restoring');
-    const unsub = onSnapshot(
-      doc(db, 'global_data', 'shared_rig_logs'),
-      (snap) => {
-        try {
-          if (snap.exists()) {
-            const data = snap.data();
-            isSyncInbound.current = true;
-            
-            if (JSON.stringify(data.sites) !== JSON.stringify(sites)) {
-              setSites(data.sites || []);
-            }
-            if (JSON.stringify(data.drillingEntries) !== JSON.stringify(drillingEntries)) {
-              setDrillingEntries(data.drillingEntries || []);
-            }
-            if (JSON.stringify(data.opexEntries) !== JSON.stringify(opexEntries)) {
-              setOpexEntries(data.opexEntries || []);
-            }
-            if (JSON.stringify(data.dceEntries) !== JSON.stringify(dceEntries)) {
-              setDceEntries(data.dceEntries || []);
-            }
-            if (JSON.stringify(data.advanceEntries) !== JSON.stringify(advanceEntries)) {
-              setAdvanceEntries(data.advanceEntries || []);
-            }
-            if (data.drafts) {
-              setDrafts(data.drafts);
-            }
-            
-            setSyncStatus('saved');
-          } else {
-            isSyncInbound.current = true;
-            setSites([]);
-            setDrillingEntries([]);
-            setOpexEntries([]);
-            setDceEntries([]);
-            setAdvanceEntries([]);
-            setSyncStatus('idle');
-          }
-        } catch (err) {
-          console.error('Failed to parse logs:', err);
-        } finally {
-          setTimeout(() => {
-            isSyncInbound.current = false;
-            initialLoadCompleted.current = true;
-          }, 150);
-        }
-      },
-      (err) => {
-        handleFirestoreError(err, OperationType.GET, 'global_data/shared_rig_logs');
-      }
-    );
-
-    return () => unsub();
   }, [user]);
 
   // Back-save database states to local caching in offline/online shifts
@@ -418,40 +302,26 @@ export const DrillTrackPropsProvider: React.FC<{ children: React.ReactNode }> = 
     localStorage.setItem('dt_drafts_global', JSON.stringify(drafts));
   }, [sites, activeSiteId, drillingEntries, opexEntries, dceEntries, advanceEntries, drafts, user]);
 
-  // Immediate global push
+  // Immediate backend re-sync
   const syncImmediately = async () => {
     if (!user) return;
-    if (user.role !== 'admin') return;
-    
     setSyncStatus('syncing');
     try {
-      const payload = {
-        userName: user.username,
-        sites,
-        drillingEntries,
-        opexEntries,
-        dceEntries,
-        advanceEntries,
-        drafts
-      };
-      await setDoc(doc(db, 'global_data', 'shared_rig_logs'), payload);
+      const token = await ensureBackendSession();
+      await Promise.all([
+        siteApi.list(token),
+        drillingApi.list(token),
+        opexApi.listCategories(token),
+        opexApi.listExpenseHeads(token),
+        opexApi.listOpexEntries(token),
+        dceApi.list(token),
+        advanceApi.list(token)
+      ]);
       setSyncStatus('saved');
-    } catch (err: any) {
-      handleFirestoreError(err, OperationType.WRITE, 'global_data/shared_rig_logs');
+    } catch {
+      setSyncStatus('offline_local');
     }
   };
-
-  // Debounced backup triggers
-  useEffect(() => {
-    if (!user || isSyncInbound.current || !initialLoadCompleted.current) return;
-    if (user.role !== 'admin') return;
-
-    const delay = setTimeout(() => {
-      syncImmediately();
-    }, 1500);
-
-    return () => clearTimeout(delay);
-  }, [sites, drillingEntries, opexEntries, dceEntries, advanceEntries, drafts, user]);
 
   // Monitoring active network connection
   useEffect(() => {
@@ -492,7 +362,7 @@ export const DrillTrackPropsProvider: React.FC<{ children: React.ReactNode }> = 
 
   const activeSite = sites.find(s => s.id === activeSiteId) || sites[0];
 
-  // Imprest Management Site Operations
+  // Advance Management Site Operations
   const addSite = async (name: string): Promise<boolean> => {
     if (!hasAccessPermission()) return false;
     const cleanName = name.trim();
@@ -504,18 +374,53 @@ export const DrillTrackPropsProvider: React.FC<{ children: React.ReactNode }> = 
       addToast('A site with this name already exists', 'error');
       return false;
     }
-    const newId = `site-${Date.now()}`;
-    const newSite: Site = {
-      id: newId,
-      name: cleanName,
-      createdBy: user?.username || 'operator',
-      updatedBy: user?.username || 'operator',
-      updatedAt: new Date().toISOString()
-    };
-    setSites(prev => [...prev, newSite]);
-    setActiveSiteId(newId);
-    addToast(`Drilling Site "${cleanName}" created successfully`, 'success');
-    return true;
+    try {
+      const token = await ensureBackendSession();
+      const created = await siteApi.create(token, { name: cleanName });
+      const newSite: Site = {
+        id: created.data.id,
+        name: created.data.name,
+        createdBy: user?.username || 'operator',
+        updatedBy: user?.username || 'operator',
+        updatedAt: created.data.updatedAt
+      };
+      setSites(prev => [...prev, newSite]);
+      setActiveSiteId(newSite.id);
+      addToast(`Drilling Site "${cleanName}" created successfully`, 'success');
+      return true;
+    } catch (e) {
+      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+        try {
+          localStorage.removeItem('dt_backend_access_token');
+          const retryToken = await ensureBackendSession();
+          const retryCreated = await siteApi.create(retryToken, { name: cleanName });
+          const retrySite: Site = {
+            id: retryCreated.data.id,
+            name: retryCreated.data.name,
+            createdBy: user?.username || 'operator',
+            updatedBy: user?.username || 'operator',
+            updatedAt: retryCreated.data.updatedAt
+          };
+          setSites(prev => [...prev, retrySite]);
+          setActiveSiteId(retrySite.id);
+          addToast(`Drilling Site "${cleanName}" created successfully`, 'success');
+          return true;
+        } catch (retryError) {
+          if (retryError instanceof ApiError) {
+            addToast(`Backend site creation failed: ${retryError.message}`, 'error');
+            return false;
+          }
+          addToast('Backend site creation failed. Check API session.', 'error');
+          return false;
+        }
+      }
+      if (e instanceof ApiError) {
+        addToast(`Backend site creation failed: ${e.message}`, 'error');
+        return false;
+      }
+      addToast('Backend site creation failed. Check API session.', 'error');
+      return false;
+    }
   };
 
   const editSite = async (id: string, newName: string): Promise<boolean> => {
@@ -529,14 +434,21 @@ export const DrillTrackPropsProvider: React.FC<{ children: React.ReactNode }> = 
       addToast('Another site with this name already exists', 'error');
       return false;
     }
-    setSites(prev => prev.map(s => s.id === id ? {
-      ...s,
-      name: cleanName,
-      updatedBy: user?.username || 'operator',
-      updatedAt: new Date().toISOString()
-    } : s));
-    addToast(`Site renamed to "${cleanName}"`, 'success');
-    return true;
+    try {
+      const token = await ensureBackendSession();
+      const updated = await siteApi.update(token, id, { name: cleanName });
+      setSites(prev => prev.map(s => s.id === id ? {
+        ...s,
+        name: updated.data.name,
+        updatedBy: user?.username || 'operator',
+        updatedAt: updated.data.updatedAt
+      } : s));
+      addToast(`Site renamed to "${cleanName}"`, 'success');
+      return true;
+    } catch {
+      addToast('Backend site update failed. Check API session.', 'error');
+      return false;
+    }
   };
 
   const deleteSite = async (id: string): Promise<void> => {
@@ -550,6 +462,14 @@ export const DrillTrackPropsProvider: React.FC<{ children: React.ReactNode }> = 
       return;
     }
     
+    try {
+      const token = await ensureBackendSession();
+      await siteApi.remove(token, id);
+    } catch {
+      addToast('Backend site deletion failed. Check API session.', 'error');
+      return;
+    }
+
     setSites(filteredSites);
     setDrillingEntries(prev => prev.filter(e => e.siteId !== id));
     setOpexEntries(prev => prev.filter(e => e.siteId !== id));
@@ -562,32 +482,47 @@ export const DrillTrackPropsProvider: React.FC<{ children: React.ReactNode }> = 
     addToast(`Site "${siteToDelete.name}" deleted along with its operational records`, 'info');
   };
 
-  // Imprest Management Daily Drilling Operations
+  // Advance Management Daily Drilling Operations
   const addDrillingEntry = (entry: DrillingEntry) => {
     if (!hasAccessPermission()) return;
     if (entry.meters < 0) {
       addToast('Drilling meters must be a positive number', 'error');
       return;
     }
-    const record: DrillingEntry = {
-      ...entry,
-      createdBy: entry.createdBy || user?.username || 'operator',
-      updatedBy: user?.username || 'operator',
-      updatedAt: new Date().toISOString()
-    };
-    
-    setDrillingEntries(prev => {
-      const idx = prev.findIndex(item => item.siteId === record.siteId && item.date === record.date);
-      if (idx !== -1) {
-        const copy = [...prev];
-        copy[idx] = record;
-        addToast(`Updated drilling on ${record.date.split('-').reverse().join('/')}: ${record.meters}m`, 'success');
-        return copy;
-      } else {
+    (async () => {
+      try {
+        const token = await ensureBackendSession();
+        const created = await drillingApi.create(token, {
+          siteId: entry.siteId,
+          date: entry.date,
+          meters: entry.meters,
+          boreholeNumber: entry.boreholeNumber
+        });
+        const record: DrillingEntry = {
+          id: created.data.id,
+          siteId: created.data.siteId,
+          date: String(created.data.date).slice(0, 10),
+          meters: typeof created.data.meters === 'number' ? created.data.meters : parseFloat(created.data.meters),
+          boreholeNumber: created.data.boreholeNumber || '',
+          createdBy: user?.username || 'operator',
+          updatedBy: user?.username || 'operator',
+          updatedAt: created.data.updatedAt
+        };
+
+        setDrillingEntries(prev => {
+          const idx = prev.findIndex(item => item.siteId === record.siteId && item.date === record.date);
+          if (idx !== -1) {
+            const copy = [...prev];
+            copy[idx] = record;
+            return copy;
+          }
+          return [...prev, record];
+        });
         addToast(`Saved drilling on ${record.date.split('-').reverse().join('/')}: ${record.meters}m`, 'success');
-        return [...prev, record];
+      } catch {
+        addToast('Backend drilling entry failed. Check API session.', 'error');
       }
-    });
+    })();
   };
 
   const editDrillingEntry = (originalDate: string, entry: DrillingEntry) => {
@@ -596,31 +531,66 @@ export const DrillTrackPropsProvider: React.FC<{ children: React.ReactNode }> = 
       addToast('Drilling meters must be a positive number', 'error');
       return;
     }
-    const record: DrillingEntry = {
-      ...entry,
-      updatedBy: user?.username || 'operator',
-      updatedAt: new Date().toISOString()
-    };
-    setDrillingEntries(prev => {
-      const filtered = prev.filter(item => !(item.siteId === record.siteId && item.date === originalDate));
-      const doubleCheckIndex = filtered.findIndex(item => item.siteId === record.siteId && item.date === record.date);
-      if (doubleCheckIndex !== -1) {
-        filtered[doubleCheckIndex] = record;
-      } else {
-        filtered.push(record);
+    (async () => {
+      try {
+        const existing = drillingEntries.find(item => item.siteId === entry.siteId && item.date === originalDate);
+        if (!existing?.id) {
+          addToast('Cannot update drilling: missing backend id', 'error');
+          return;
+        }
+        const token = await ensureBackendSession();
+        const updated = await drillingApi.update(token, existing.id, {
+          date: entry.date,
+          meters: entry.meters,
+          boreholeNumber: entry.boreholeNumber
+        });
+        const record: DrillingEntry = {
+          id: updated.data.id,
+          siteId: updated.data.siteId,
+          date: String(updated.data.date).slice(0, 10),
+          meters: typeof updated.data.meters === 'number' ? updated.data.meters : parseFloat(updated.data.meters),
+          boreholeNumber: updated.data.boreholeNumber || '',
+          createdBy: existing.createdBy || user?.username || 'operator',
+          updatedBy: user?.username || 'operator',
+          updatedAt: updated.data.updatedAt
+        };
+        setDrillingEntries(prev => {
+          const filtered = prev.filter(item => !(item.siteId === record.siteId && item.date === originalDate));
+          const doubleCheckIndex = filtered.findIndex(item => item.siteId === record.siteId && item.date === record.date);
+          if (doubleCheckIndex !== -1) {
+            filtered[doubleCheckIndex] = record;
+          } else {
+            filtered.push(record);
+          }
+          return filtered;
+        });
+        addToast('Drilling log updated', 'success');
+      } catch {
+        addToast('Backend drilling update failed. Check API session.', 'error');
       }
-      return filtered;
-    });
-    addToast('Drilling log updated', 'success');
+    })();
   };
 
   const deleteDrillingEntry = (date: string) => {
     if (!hasAccessPermission()) return;
-    setDrillingEntries(prev => prev.filter(item => !(item.siteId === activeSiteId && item.date === date)));
-    addToast('Drilling log deleted', 'info');
+    (async () => {
+      try {
+        const existing = drillingEntries.find(item => item.siteId === activeSiteId && item.date === date);
+        if (!existing?.id) {
+          addToast('Cannot delete drilling: missing backend id', 'error');
+          return;
+        }
+        const token = await ensureBackendSession();
+        await drillingApi.remove(token, existing.id);
+        setDrillingEntries(prev => prev.filter(item => !(item.siteId === activeSiteId && item.date === date)));
+        addToast('Drilling log deleted', 'info');
+      } catch {
+        addToast('Backend drilling deletion failed. Check API session.', 'error');
+      }
+    })();
   };
 
-  // Imprest Management Taxonomy (Categories & Heads)
+  // Advance Management Taxonomy (Categories & Heads)
   const addCategory = async (name: string): Promise<Category | null> => {
     if (!hasAccessPermission()) return null;
     const cleanName = name.trim();
@@ -633,13 +603,14 @@ export const DrillTrackPropsProvider: React.FC<{ children: React.ReactNode }> = 
       return null;
     }
     try {
-      const docRef = await addDoc(collection(db, 'categories'), { name: cleanName });
-      const newCat: Category = { id: docRef.id, name: cleanName };
+      const token = await ensureBackendSession();
+      const created = await opexApi.createCategory(token, { name: cleanName });
+      const newCat: Category = { id: created.data.id, name: created.data.name, sortOrder: created.data.sortOrder ?? null };
       setCategories(prev => [...prev, newCat]);
       addToast(`Category "${cleanName}" added`, 'success');
       return newCat;
-    } catch (err: any) {
-      handleFirestoreError(err, OperationType.WRITE, 'categories');
+    } catch {
+      addToast('Backend category creation failed. Check API session.', 'error');
       return null;
     }
   };
@@ -655,26 +626,20 @@ export const DrillTrackPropsProvider: React.FC<{ children: React.ReactNode }> = 
       addToast('Another category with this name already exists', 'error');
       return false;
     }
-    try {
-      await updateDoc(doc(db, 'categories', id), { name: cleanName });
-      setCategories(prev => prev.map(c => c.id === id ? { id, name: cleanName } : c));
-      addToast(`Category renamed to "${cleanName}"`, 'success');
-      return true;
-    } catch (err: any) {
-      handleFirestoreError(err, OperationType.WRITE, `categories/${id}`);
-      return false;
-    }
+    addToast('Category rename is not yet supported by backend API.', 'error');
+    return false;
   };
 
   const deleteCategory = async (id: string): Promise<boolean> => {
     if (!hasAccessPermission()) return false;
     try {
-      await deleteDoc(doc(db, 'categories', id));
+      const token = await ensureBackendSession();
+      await opexApi.deleteCategory(token, id);
       setCategories(prev => prev.filter(c => c.id !== id));
       addToast('Category deleted', 'info');
       return true;
-    } catch (err: any) {
-      handleFirestoreError(err, OperationType.DELETE, `categories/${id}`);
+    } catch {
+      addToast('Backend category deletion failed. Check API session.', 'error');
       return false;
     }
   };
@@ -691,17 +656,19 @@ export const DrillTrackPropsProvider: React.FC<{ children: React.ReactNode }> = 
       return null;
     }
     try {
-      const docRef = await addDoc(collection(db, 'expense_heads'), {
-        categoryId,
-        category_id: categoryId,
-        name: cleanName
-      });
-      const newHead: ExpenseHead = { id: docRef.id, categoryId, name: cleanName };
+      const token = await ensureBackendSession();
+      const created = await opexApi.createExpenseHead(token, { categoryId, name: cleanName });
+      const newHead: ExpenseHead = {
+        id: created.data.id,
+        categoryId: created.data.categoryId,
+        name: created.data.name,
+        sortOrder: created.data.sortOrder ?? null
+      };
       setExpenseHeads(prev => [...prev, newHead]);
       addToast(`Expense Head "${cleanName}" added`, 'success');
       return newHead;
-    } catch (err: any) {
-      handleFirestoreError(err, OperationType.WRITE, 'expense_heads');
+    } catch {
+      addToast('Backend expense head creation failed. Check API session.', 'error');
       return null;
     }
   };
@@ -721,51 +688,60 @@ export const DrillTrackPropsProvider: React.FC<{ children: React.ReactNode }> = 
       addToast('Another expense head with this name already exists in this category', 'error');
       return false;
     }
-    try {
-      await updateDoc(doc(db, 'expense_heads', id), {
-        name: cleanName,
-        categoryId: targetCatId,
-        category_id: targetCatId
-      });
-      const updated: ExpenseHead = { id, categoryId: targetCatId, name: cleanName };
-      setExpenseHeads(prev => prev.map(eh => eh.id === id ? updated : eh));
-      addToast(`Expense head renamed to "${cleanName}"`, 'success');
-      return true;
-    } catch (err: any) {
-      handleFirestoreError(err, OperationType.WRITE, `expense_heads/${id}`);
-      return false;
-    }
+    addToast('Expense head rename is not yet supported by backend API.', 'error');
+    return false;
   };
 
   const deleteExpenseHead = async (id: string): Promise<boolean> => {
     if (!hasAccessPermission()) return false;
     try {
-      await deleteDoc(doc(db, 'expense_heads', id));
+      const token = await ensureBackendSession();
+      await opexApi.deleteExpenseHead(token, id);
       setExpenseHeads(prev => prev.filter(eh => eh.id !== id));
       addToast('Expense Head deleted', 'info');
       return true;
-    } catch (err: any) {
-      handleFirestoreError(err, OperationType.DELETE, `expense_heads/${id}`);
+    } catch {
+      addToast('Backend expense head deletion failed. Check API session.', 'error');
       return false;
     }
   };
 
-  // Imprest Management OPEX Entries
+  // Advance Management OPEX Entries
   const addOpexEntry = (entry: OpexEntry) => {
     if (!hasAccessPermission()) return;
     if (entry.amount <= 0) {
       addToast('OPEX amount must be positive', 'error');
       return;
     }
-    const opex: OpexEntry = {
-      ...entry,
-      id: `op-${Date.now()}`,
-      createdBy: user?.username || 'operator',
-      updatedBy: user?.username || 'operator',
-      updatedAt: new Date().toISOString()
-    };
-    setOpexEntries(prev => [...prev, opex]);
-    addToast(`OPEX Entry saved! ₹${entry.amount.toLocaleString('en-IN')}`, 'success');
+    (async () => {
+      try {
+        const token = await ensureBackendSession();
+        const created = await opexApi.createOpexEntry(token, {
+          siteId: entry.siteId,
+          categoryId: entry.categoryId,
+          expenseHeadId: entry.expenseHeadId,
+          amount: entry.amount,
+          date: entry.date,
+          remarks: entry.remarks
+        });
+        const opex: OpexEntry = {
+          id: created.data.id,
+          siteId: created.data.siteId,
+          categoryId: created.data.categoryId,
+          expenseHeadId: created.data.expenseHeadId,
+          amount: typeof created.data.amount === 'number' ? created.data.amount : parseFloat(created.data.amount),
+          date: String(created.data.date).slice(0, 10),
+          remarks: created.data.remarks || '',
+          createdBy: user?.username || 'operator',
+          updatedBy: user?.username || 'operator',
+          updatedAt: created.data.updatedAt
+        };
+        setOpexEntries(prev => [...prev, opex]);
+        addToast(`OPEX Entry saved! ${entry.amount.toLocaleString('en-IN')}`, 'success');
+      } catch {
+        addToast('Backend OPEX create failed. Check API session.', 'error');
+      }
+    })();
   };
 
   const editOpexEntry = (entry: OpexEntry) => {
@@ -774,26 +750,54 @@ export const DrillTrackPropsProvider: React.FC<{ children: React.ReactNode }> = 
       addToast('OPEX amount must be positive', 'error');
       return;
     }
-    const opex: OpexEntry = {
-      ...entry,
-      updatedBy: user?.username || 'operator',
-      updatedAt: new Date().toISOString()
-    };
-    setOpexEntries(prev => prev.map(o => o.id === entry.id ? opex : o));
-    addToast('OPEX Entry updated successfully', 'success');
+    (async () => {
+      try {
+        const token = await ensureBackendSession();
+        const updated = await opexApi.updateOpexEntry(token, entry.id, {
+          categoryId: entry.categoryId,
+          expenseHeadId: entry.expenseHeadId,
+          amount: entry.amount,
+          date: entry.date,
+          remarks: entry.remarks
+        });
+        const opex: OpexEntry = {
+          id: updated.data.id,
+          siteId: updated.data.siteId,
+          categoryId: updated.data.categoryId,
+          expenseHeadId: updated.data.expenseHeadId,
+          amount: typeof updated.data.amount === 'number' ? updated.data.amount : parseFloat(updated.data.amount),
+          date: String(updated.data.date).slice(0, 10),
+          remarks: updated.data.remarks || '',
+          createdBy: entry.createdBy || user?.username || 'operator',
+          updatedBy: user?.username || 'operator',
+          updatedAt: updated.data.updatedAt
+        };
+        setOpexEntries(prev => prev.map(o => o.id === entry.id ? opex : o));
+        addToast('OPEX Entry updated successfully', 'success');
+      } catch {
+        addToast('Backend OPEX update failed. Check API session.', 'error');
+      }
+    })();
   };
 
   const deleteOpexEntry = (id: string) => {
     if (!hasAccessPermission()) return;
-    setOpexEntries(prev => prev.filter(o => o.id !== id));
-    addToast('OPEX Entry deleted', 'info');
+    (async () => {
+      try {
+        const token = await ensureBackendSession();
+        await opexApi.deleteOpexEntry(token, id);
+        setOpexEntries(prev => prev.filter(o => o.id !== id));
+        addToast('OPEX Entry deleted', 'info');
+      } catch {
+        addToast('Backend OPEX deletion failed. Check API session.', 'error');
+      }
+    })();
   };
 
   // Standing Cost Intelligence (DCE) Calculations
   const getDceActiveDays = (entry: DceEntry, dateOverride: string = getTodayStr()) => {
     const end = entry.status === 'Stopped' && entry.stopped_at ? entry.stopped_at : dateOverride;
     const totalPausedDays = entry.total_paused_days;
-    // Difference between start date and end/pause date minus paused duration
     const diff = getDaysDiff(entry.start_date, end);
     return Math.max(0, diff - totalPausedDays);
   };
@@ -809,25 +813,39 @@ export const DrillTrackPropsProvider: React.FC<{ children: React.ReactNode }> = 
       addToast('Per day cost must be positive', 'error');
       return;
     }
-    const today = getTodayStr();
-    const dce: DceEntry = {
-      id: `dce-${Date.now()}`,
-      site_id: activeSiteId,
-      cost_head: entry.cost_head || '',
-      per_day_cost: perDayCost,
-      start_date: entry.start_date || today,
-      status: entry.status || 'Active',
-      remarks: entry.remarks || '',
-      created_at: today,
-      paused_at: entry.status === 'Paused' ? today : null,
-      stopped_at: entry.status === 'Stopped' ? today : null,
-      total_paused_days: 0,
-      createdBy: user?.username || 'operator',
-      updatedBy: user?.username || 'operator',
-      updatedAt: new Date().toISOString()
-    };
-    setDceEntries(prev => [...prev, dce]);
-    addToast(`Daily Standing Cost "${entry.cost_head}" started at ₹${perDayCost.toLocaleString('en-IN')}/day`, 'success');
+    (async () => {
+      try {
+        const token = await ensureBackendSession();
+        const created = await dceApi.create(token, {
+          siteId: activeSiteId,
+          costHead: entry.cost_head || '',
+          perDayCost,
+          startDate: entry.start_date || getTodayStr(),
+          status: entry.status === 'Paused' ? 'PAUSED' : entry.status === 'Stopped' ? 'STOPPED' : 'ACTIVE',
+          remarks: entry.remarks || ''
+        });
+        const dce: DceEntry = {
+          id: created.data.id,
+          site_id: created.data.siteId,
+          cost_head: created.data.costHead,
+          per_day_cost: typeof created.data.perDayCost === 'number' ? created.data.perDayCost : parseFloat(created.data.perDayCost),
+          start_date: String(created.data.startDate).slice(0, 10),
+          status: created.data.status === 'ACTIVE' ? 'Active' : created.data.status === 'PAUSED' ? 'Paused' : 'Stopped',
+          remarks: created.data.remarks || '',
+          created_at: String(created.data.createdAt).slice(0, 10),
+          paused_at: created.data.pausedAt ? String(created.data.pausedAt).slice(0, 10) : null,
+          stopped_at: created.data.stoppedAt ? String(created.data.stoppedAt).slice(0, 10) : null,
+          total_paused_days: created.data.totalPausedDays,
+          createdBy: user?.username || 'operator',
+          updatedBy: user?.username || 'operator',
+          updatedAt: created.data.updatedAt
+        };
+        setDceEntries(prev => [...prev, dce]);
+        addToast(`Daily Standing Cost "${entry.cost_head}" started at ${perDayCost.toLocaleString('en-IN')}/day`, 'success');
+      } catch {
+        addToast('Backend DCA create failed. Check API session.', 'error');
+      }
+    })();
   };
 
   const editDceEntry = (entry: DceEntry) => {
@@ -836,76 +854,81 @@ export const DrillTrackPropsProvider: React.FC<{ children: React.ReactNode }> = 
       addToast('Per day cost must be positive', 'error');
       return;
     }
-    const dce: DceEntry = {
-      ...entry,
-      updatedBy: user?.username || 'operator',
-      updatedAt: new Date().toISOString()
-    };
-    setDceEntries(prev => prev.map(d => d.id === entry.id ? dce : d));
-    addToast(`Standing Cost "${dce.cost_head}" updated`, 'success');
+    (async () => {
+      try {
+        const token = await ensureBackendSession();
+        const updated = await dceApi.update(token, entry.id, {
+          costHead: entry.cost_head,
+          perDayCost: entry.per_day_cost,
+          startDate: entry.start_date,
+          remarks: entry.remarks
+        });
+        const dce: DceEntry = {
+          id: updated.data.id,
+          site_id: updated.data.siteId,
+          cost_head: updated.data.costHead,
+          per_day_cost: typeof updated.data.perDayCost === 'number' ? updated.data.perDayCost : parseFloat(updated.data.perDayCost),
+          start_date: String(updated.data.startDate).slice(0, 10),
+          status: updated.data.status === 'ACTIVE' ? 'Active' : updated.data.status === 'PAUSED' ? 'Paused' : 'Stopped',
+          remarks: updated.data.remarks || '',
+          created_at: entry.created_at,
+          paused_at: updated.data.pausedAt ? String(updated.data.pausedAt).slice(0, 10) : null,
+          stopped_at: updated.data.stoppedAt ? String(updated.data.stoppedAt).slice(0, 10) : null,
+          total_paused_days: updated.data.totalPausedDays,
+          createdBy: entry.createdBy,
+          updatedBy: user?.username || 'operator',
+          updatedAt: updated.data.updatedAt
+        };
+        setDceEntries(prev => prev.map(d => d.id === entry.id ? dce : d));
+        addToast(`Standing Cost "${dce.cost_head}" updated`, 'success');
+      } catch {
+        addToast('Backend DCA update failed. Check API session.', 'error');
+      }
+    })();
   };
 
   const deleteDceEntry = (id: string) => {
     if (!hasAccessPermission()) return;
-    setDceEntries(prev => prev.filter(d => d.id !== id));
-    addToast('Standing Cost deleted', 'info');
+    (async () => {
+      try {
+        const token = await ensureBackendSession();
+        await dceApi.remove(token, id);
+        setDceEntries(prev => prev.filter(d => d.id !== id));
+        addToast('Standing Cost deleted', 'info');
+      } catch {
+        addToast('Backend DCA deletion failed. Check API session.', 'error');
+      }
+    })();
   };
 
   const toggleDceStatus = (id: string, action: 'pause' | 'resume' | 'stop') => {
     if (!hasAccessPermission()) return;
-    const today = getTodayStr();
-    setDceEntries(prev => prev.map(item => {
-      if (item.id !== id) return item;
-
-      if (action === 'pause') {
-        if (item.status !== 'Active') return item;
-        return {
-          ...item,
-          status: 'Paused',
-          paused_at: today,
-          stopped_at: null,
+    (async () => {
+      try {
+        const token = await ensureBackendSession();
+        const updated = await dceApi.action(token, id, action);
+        const dce: DceEntry = {
+          id: updated.data.id,
+          site_id: updated.data.siteId,
+          cost_head: updated.data.costHead,
+          per_day_cost: typeof updated.data.perDayCost === 'number' ? updated.data.perDayCost : parseFloat(updated.data.perDayCost),
+          start_date: String(updated.data.startDate).slice(0, 10),
+          status: updated.data.status === 'ACTIVE' ? 'Active' : updated.data.status === 'PAUSED' ? 'Paused' : 'Stopped',
+          remarks: updated.data.remarks || '',
+          created_at: String(updated.data.createdAt).slice(0, 10),
+          paused_at: updated.data.pausedAt ? String(updated.data.pausedAt).slice(0, 10) : null,
+          stopped_at: updated.data.stoppedAt ? String(updated.data.stoppedAt).slice(0, 10) : null,
+          total_paused_days: updated.data.totalPausedDays,
+          createdBy: 'backend',
           updatedBy: user?.username || 'operator',
-          updatedAt: new Date().toISOString()
+          updatedAt: updated.data.updatedAt
         };
+        setDceEntries(prev => prev.map(item => item.id === id ? dce : item));
+        addToast(`Standing cost state updated to ${action.toUpperCase()}D`, 'success');
+      } catch {
+        addToast('Backend DCA status update failed. Check API session.', 'error');
       }
-      
-      if (action === 'resume') {
-        if (item.status !== 'Paused') return item;
-        let pausedDuration = 0;
-        if (item.paused_at) {
-          pausedDuration = getDaysDiff(item.paused_at, today);
-        }
-        return {
-          ...item,
-          status: 'Active',
-          total_paused_days: item.total_paused_days + pausedDuration,
-          paused_at: null,
-          stopped_at: null,
-          updatedBy: user?.username || 'operator',
-          updatedAt: new Date().toISOString()
-        };
-      }
-      
-      if (action === 'stop') {
-        if (item.status === 'Stopped') return item;
-        let finalPausedDays = item.total_paused_days;
-        if (item.status === 'Paused' && item.paused_at) {
-          finalPausedDays += getDaysDiff(item.paused_at, today);
-        }
-        return {
-          ...item,
-          status: 'Stopped',
-          stopped_at: today,
-          paused_at: null,
-          total_paused_days: finalPausedDays,
-          updatedBy: user?.username || 'operator',
-          updatedAt: new Date().toISOString()
-        };
-      }
-
-      return item;
-    }));
-    addToast(`Standing cost state updated to ${action.toUpperCase()}D`, 'success');
+    })();
   };
 
   // Site Advance Payments Management
@@ -915,18 +938,31 @@ export const DrillTrackPropsProvider: React.FC<{ children: React.ReactNode }> = 
       addToast('Advance payment must be a positive amount', 'error');
       return;
     }
-    const advance: AdvanceEntry = {
-      id: `adv-${Date.now()}`,
-      siteId: activeSiteId,
-      date,
-      amount,
-      remarks: remarks.trim(),
-      createdBy: user?.username || 'operator',
-      updatedBy: user?.username || 'operator',
-      updatedAt: new Date().toISOString()
-    };
-    setAdvanceEntries(prev => [...prev, advance]);
-    addToast(`Advance cash payment recorded: ₹${amount.toLocaleString('en-IN')}`, 'success');
+    (async () => {
+      try {
+        const token = await ensureBackendSession();
+        const created = await advanceApi.create(token, {
+          siteId: activeSiteId,
+          date,
+          amount,
+          remarks: remarks.trim()
+        });
+        const advance: AdvanceEntry = {
+          id: created.data.id,
+          siteId: created.data.siteId,
+          date: String(created.data.date).slice(0, 10),
+          amount: typeof created.data.amount === 'number' ? created.data.amount : parseFloat(created.data.amount),
+          remarks: created.data.remarks || '',
+          createdBy: user?.username || 'operator',
+          updatedBy: user?.username || 'operator',
+          updatedAt: created.data.updatedAt
+        };
+        setAdvanceEntries(prev => [...prev, advance]);
+        addToast(`Advance cash payment recorded: ${amount.toLocaleString('en-IN')}`, 'success');
+      } catch {
+        addToast('Backend advance create failed. Check API session.', 'error');
+      }
+    })();
   };
 
   const editAdvanceEntry = (entry: AdvanceEntry) => {
@@ -935,19 +971,44 @@ export const DrillTrackPropsProvider: React.FC<{ children: React.ReactNode }> = 
       addToast('Advance payment must be a positive amount', 'error');
       return;
     }
-    const advance: AdvanceEntry = {
-      ...entry,
-      updatedBy: user?.username || 'operator',
-      updatedAt: new Date().toISOString()
-    };
-    setAdvanceEntries(prev => prev.map(a => a.id === entry.id ? advance : a));
-    addToast('Advance payment updated', 'success');
+    (async () => {
+      try {
+        const token = await ensureBackendSession();
+        const updated = await advanceApi.update(token, entry.id, {
+          date: entry.date,
+          amount: entry.amount,
+          remarks: entry.remarks
+        });
+        const advance: AdvanceEntry = {
+          id: updated.data.id,
+          siteId: updated.data.siteId,
+          date: String(updated.data.date).slice(0, 10),
+          amount: typeof updated.data.amount === 'number' ? updated.data.amount : parseFloat(updated.data.amount),
+          remarks: updated.data.remarks || '',
+          createdBy: entry.createdBy || user?.username || 'operator',
+          updatedBy: user?.username || 'operator',
+          updatedAt: updated.data.updatedAt
+        };
+        setAdvanceEntries(prev => prev.map(a => a.id === entry.id ? advance : a));
+        addToast('Advance payment updated', 'success');
+      } catch {
+        addToast('Backend advance update failed. Check API session.', 'error');
+      }
+    })();
   };
 
   const deleteAdvanceEntry = (id: string) => {
     if (!hasAccessPermission()) return;
-    setAdvanceEntries(prev => prev.filter(a => a.id !== id));
-    addToast('Advance payment record deleted', 'info');
+    (async () => {
+      try {
+        const token = await ensureBackendSession();
+        await advanceApi.remove(token, id);
+        setAdvanceEntries(prev => prev.filter(a => a.id !== id));
+        addToast('Advance payment record deleted', 'info');
+      } catch {
+        addToast('Backend advance deletion failed. Check API session.', 'error');
+      }
+    })();
   };
 
   // Auth Functions removed
@@ -1014,3 +1075,5 @@ export const useDrillTrack = () => {
   }
   return context;
 };
+
+

@@ -32,9 +32,7 @@ export const exportOpexToExcel = (
       'Category': cat,
       'Expense Head': head,
       'Payment Amount (INR)': e.amount,
-      'Remarks / Party details': e.remarks,
-      'Authorized By': e.createdBy || 'operator',
-      'Last Configuration': e.updatedAt ? new Date(e.updatedAt).toLocaleDateString('en-IN') : ''
+      'Remarks / Party details': e.remarks
     };
   });
 
@@ -59,9 +57,7 @@ export const exportDceToExcel = (
     'Operation status': e.status,
     'Active Accrued Days': getDceActiveDays(e),
     'Total Standing Cost (INR)': getDceTotal(e),
-    'Remarks / Maintenance details': e.remarks,
-    'Created At': e.created_at.split('-').reverse().join('/'),
-    'Logged By': e.createdBy || 'operator'
+    'Remarks / Maintenance details': e.remarks
   }));
 
   const ws = XLSX.utils.json_to_sheet(data);
@@ -75,7 +71,7 @@ export const exportAdvancesToExcel = (entries: AdvanceEntry[], siteName: string)
   const sorted = [...entries].sort((a, b) => b.date.localeCompare(a.date));
   const data = sorted.map(e => ({
     'Issue Date': e.date.split('-').reverse().join('/'),
-    'Imprest Amount (INR)': e.amount,
+    'Advance Amount (INR)': e.amount,
     'Remarks / Receipts details': e.remarks
   }));
 

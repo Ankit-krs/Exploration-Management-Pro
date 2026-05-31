@@ -8,10 +8,9 @@ import {
   Wifi, 
   WifiOff, 
   CloudLightning,
-  CheckCircle2, 
+  CheckCircle2,
   AlertCircle,
-  XCircle,
-  Activity
+  XCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -35,8 +34,12 @@ export const MainWorkspace: React.FC = () => {
     { id: 'dashboard', label: 'DASHBOARD' },
     { id: 'opex', label: 'OPEX' },
     { id: 'dce', label: 'DCA' },
-    { id: 'advance', label: 'IMPREST' }
+    { id: 'advance', label: 'ADVANCE' }
   ];
+
+  const showOffline = isOffline;
+  const showBackendUnreachable = !isOffline && syncStatus === 'offline_local';
+  const showSyncing = !isOffline && (syncStatus === 'syncing' || syncStatus === 'restoring');
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50/50 dark:bg-slate-950 text-gray-900 dark:text-gray-100 transition-colors duration-200 font-sans">
@@ -52,16 +55,21 @@ export const MainWorkspace: React.FC = () => {
 
           {/* Sync operations diagnostics badge */}
           <div className="flex items-center gap-1">
-            {isOffline ? (
+            {showOffline ? (
               <span className="flex items-center gap-1 px-2 py-0.5 bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-450 text-[9px] font-bold rounded-full uppercase tracking-wider">
                 <WifiOff className="w-2.5 h-2.5 shrink-0 animate-pulse" />
                 <span>Offline mode</span>
+              </span>
+            ) : showBackendUnreachable ? (
+              <span className="flex items-center gap-1 px-2 py-0.5 bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 text-[9px] font-bold rounded-full uppercase tracking-wider">
+                <CloudLightning className="w-2.5 h-2.5 shrink-0" />
+                <span>Backend unreachable</span>
               </span>
             ) : (
               <span className="flex items-center gap-1 px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 text-[9px] font-bold rounded-full uppercase tracking-wider">
                 <Wifi className="w-2.5 h-2.5 shrink-0" />
                 <span>
-                  {syncStatus === 'syncing' ? 'Syncing...' : 'Connected'}
+                  {showSyncing ? 'Syncing...' : 'Connected'}
                 </span>
               </span>
             )}

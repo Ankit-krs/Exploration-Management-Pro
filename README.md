@@ -1,20 +1,77 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Exploration Management Pro
 
-# Run and deploy your AI Studio app
+A full-stack drilling operations app with:
+- Frontend: React + Vite (port `3000`)
+- Backend API: Node + Express (port `4000`)
+- Database: PostgreSQL (Docker, mapped to host port `5433`)
 
-This contains everything you need to run your app locally.
+## Project Structure (Simple View)
 
-View your app in AI Studio: https://ai.studio/apps/4af6e96c-d5ed-4ba7-b85c-436d3d305ac5
+- `src/` : frontend application
+- `src/components/` : page modules (`Dashboard`, `OPEX`, `DCA`, `Advance`)
+- `src/context/` : shared app state + API sync logic
+- `src/api/` : backend API client calls
+- `src/utils/` : utility helpers (Excel export, etc.)
+- `backend/` : backend server + Prisma schema/migrations
+- `docs/` : operational/deployment documentation
+- `assets/` : static media files
 
-## Run Locally
+## How Data Flows
 
-**Prerequisites:**  Node.js
+1. User enters data in frontend (`src/components/*`).
+2. Frontend calls backend APIs (`src/api/*`).
+3. Backend validates and writes to PostgreSQL (`backend/prisma/schema.prisma`).
+4. Updated data is returned and UI refreshes.
 
+## Local Run (Recommended)
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+### 1) Start PostgreSQL (Docker)
+
+```bash
+docker run --name exploration-pg \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=exploration_management \
+  -p 5433:5432 -d postgres:16
+```
+
+If container already exists:
+
+```bash
+docker start exploration-pg
+```
+
+### 2) Start backend
+
+```bash
+cd backend
+npm install
+npm run dev
+```
+
+### 3) Start frontend
+
+```bash
+cd ..
+npm install
+npm run dev
+```
+
+Open: [http://127.0.0.1:3000](http://127.0.0.1:3000)
+
+## Useful Files
+
+- Frontend env: `.env.local`
+- Backend env: `backend/.env`
+- DB schema: `backend/prisma/schema.prisma`
+- Deployment notes: `docs/DEPLOYMENT_TOPOLOGY.md`
+
+## Verification
+
+Run checks:
+
+```bash
+npm run lint
+npm run build
+```
+
+Both should pass before production deployment.

@@ -18,6 +18,7 @@ export interface Site {
 }
 
 export interface DrillingEntry {
+  id?: string;
   siteId: string;
   date: string;
   meters: number;
@@ -42,7 +43,7 @@ export interface OpexEntry {
 
 export interface DceEntry {
   id: string;
-  site_id: string; // matches firebase `site_id`
+  site_id: string;
   cost_head: string;
   per_day_cost: number;
   start_date: string;
@@ -71,12 +72,14 @@ export interface AdvanceEntry {
 export interface Category {
   id: string;
   name: string;
+  sortOrder?: number | null;
 }
 
 export interface ExpenseHead {
   id: string;
   categoryId: string;
   name: string;
+  sortOrder?: number | null;
 }
 
 export type ToastType = 'success' | 'info' | 'error';

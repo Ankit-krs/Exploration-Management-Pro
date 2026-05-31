@@ -57,17 +57,17 @@ export const Advance: React.FC = () => {
   const handleAdvanceExcelExport = () => {
     if (!activeSite) return;
     exportAdvancesToExcel(siteAdvances, activeSite.name);
-    addToast('Site Imprest register successfully bundled and downloaded.', 'success');
+    addToast('Site Advance register successfully bundled and downloaded.', 'success');
   };
 
   return (
     <div id="advance-page" className="space-y-6 md:space-y-8 animate-fade-in text-gray-900 dark:text-gray-100 font-sans">
       
-      {/* Imprest Title section */}
+      {/* Advance Title section */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-1.5 border-b border-gray-100 dark:border-slate-800">
         <div>
           <span className="text-[10px] uppercase font-bold tracking-wider text-blue-500 dark:text-blue-400 block mb-1">
-            Imprest Register
+            Advance Register
           </span>
           <h2 className="font-sans font-bold text-2xl tracking-tight text-gray-900 dark:text-white">
             {activeSite?.name || "Loading site..."}
@@ -91,7 +91,7 @@ export const Advance: React.FC = () => {
         <div className="lg:col-span-5 bg-white dark:bg-slate-900 border border-gray-200/90 dark:border-slate-800 rounded-[24px] p-6 shadow-xs">
           <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-gray-950 dark:text-white">
             <span className="w-1.5 h-6 bg-[#2563EB] rounded-full"></span>
-            <span>Add Site Imprest</span>
+            <span>Add Site Advance</span>
           </h2>
 
           <form id="form-advance-entry" onSubmit={handleSubmitAdvance} className="space-y-4">
@@ -118,10 +118,10 @@ export const Advance: React.FC = () => {
               </div>
             </div>
 
-            {/* Imprest Amount */}
+            {/* Advance Amount */}
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
-                Imprest Amount (₹)
+                Advance Amount (₹)
               </label>
               <div className="relative">
                 <input
@@ -172,7 +172,7 @@ export const Advance: React.FC = () => {
                 disabled={!activeSite || siteAdvances.length === 0}
                 onClick={handleAdvanceExcelExport}
                 className="w-11 h-11 rounded-xl border border-gray-200 dark:border-slate-700 hover:border-blue-500/50 hover:bg-blue-50/50 dark:hover:bg-blue-950/25 dark:hover:border-blue-500/30 hover:text-blue-600 dark:hover:text-blue-400 text-gray-700 dark:text-gray-200 bg-white dark:bg-slate-900 shadow-xs hover:scale-[1.01] active:scale-[0.99] transition-all flex items-center justify-center cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
-                title="Download Imprest Ledger"
+                title="Download Advance Ledger"
               >
                 <Download className="w-5 h-5" />
               </button>
@@ -186,7 +186,7 @@ export const Advance: React.FC = () => {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold flex items-center gap-2 text-gray-950 dark:text-white">
               <span className="w-1.5 h-6 bg-[#2563EB] rounded-full"></span>
-              <span>Imprest Log Register</span>
+              <span>Advance Log Register</span>
             </h2>
             <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 px-2 py-0.5 rounded font-mono font-bold uppercase tracking-wider">
               {siteAdvances.length} Logs
@@ -204,7 +204,7 @@ export const Advance: React.FC = () => {
             <div className="divide-y divide-gray-150 dark:divide-slate-800 max-h-96 overflow-y-auto">
               {siteAdvances.length === 0 ? (
                 <div className="p-8 text-center text-xs text-gray-400 dark:text-gray-500 font-semibold leading-relaxed">
-                  No imprest issued to this workspace yet. Submit to document allocations.
+                  No advance issued to this workspace yet. Submit to document allocations.
                 </div>
               ) : (
                 [...siteAdvances]

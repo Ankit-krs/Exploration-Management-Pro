@@ -15,6 +15,17 @@ import {
   Info
 } from 'lucide-react';
 
+const DCA_COST_HEAD_OPTIONS = [
+  'Rig Depreciation',
+  'Operator Salary',
+  'Labour Salary',
+  'Night Guard Salary',
+  'Geologist Salary',
+  'Adhoc Manpower',
+  'Accessories Depriciation',
+  'Other'
+] as const;
+
 export const Dce: React.FC = () => {
   const {
     activeSiteId,
@@ -174,8 +185,11 @@ export const Dce: React.FC = () => {
                 }}
                 className="w-full h-11 px-4 rounded-xl border border-gray-200 dark:border-slate-700 bg-transparent text-gray-950 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/35 focus:border-blue-500 text-sm font-semibold cursor-pointer disabled:opacity-50"
               >
-                <option value="Rig Depreciation" className="bg-white dark:bg-slate-900 text-sm font-semibold">Rig Depreciation</option>
-                <option value="Other" className="bg-white dark:bg-slate-900 text-sm font-semibold">Other Description (Custom)</option>
+                {DCA_COST_HEAD_OPTIONS.map((option) => (
+                  <option key={option} value={option} className="bg-white dark:bg-slate-900 text-sm font-semibold">
+                    {option === 'Other' ? 'Other Description (Custom)' : option}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -240,9 +254,9 @@ export const Dce: React.FC = () => {
               <button
                 type="submit"
                 disabled={!activeSite}
-                className="flex-1 h-11 rounded-xl bg-gray-950 hover:bg-gray-805 dark:hover:bg-gray-100 dark:bg-white dark:text-gray-955 hover:scale-[1.01] active:scale-[0.99] text-white font-bold text-xs uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 h-11 rounded-xl bg-gray-950 hover:bg-gray-805 dark:hover:bg-gray-100 dark:bg-white dark:text-gray-950 hover:scale-[1.01] active:scale-[0.99] text-white font-bold text-xs uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Track Daily DCA
+                Submit
               </button>
               
               <button
