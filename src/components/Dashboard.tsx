@@ -48,7 +48,7 @@ export const Dashboard: React.FC = () => {
   const [showDeleteSite, setShowDeleteSite] = useState(false);
   
   // Drills in-place editing helper states
-  const [editingDrillDate, setEditingDrillDate] = useState<string | null>(null);
+  const [editingDrillId, setEditingDrillId] = useState<string | null>(null);
   const [editMetersFieldValue, setEditMetersFieldValue] = useState('');
 
   // Draft text names holds
@@ -430,11 +430,11 @@ export const Dashboard: React.FC = () => {
                     .sort((a, b) => b.date.localeCompare(a.date))
                     .map((item, index) => {
                       const dateObjRev = item.date.split('-').reverse().join('/');
-                      const isEditingThisRow = editingDrillDate === item.date;
+                      const isEditingThisRow = editingDrillId === item.id;
 
                       return (
                         <div 
-                          key={item.date} 
+                          key={item.id} 
                           id={`drilling-row-${index}`}
                           className="grid grid-cols-[1.5fr_1.2fr_90px] p-3 text-xs font-semibold text-gray-700 dark:text-gray-300 items-center hover:bg-gray-50/55 dark:hover:bg-slate-800/30 transition-colors"
                         >
@@ -477,8 +477,8 @@ export const Dashboard: React.FC = () => {
                                       addToast('Please enter a valid non-negative number of meters', 'error');
                                       return;
                                     }
-                                    editDrillingEntry(item.date, { siteId: activeSiteId, date: item.date, meters: parsedNum, boreholeNumber: item.boreholeNumber });
-                                    setEditingDrillDate(null);
+                                    editDrillingEntry(item.id, { siteId: activeSiteId, date: item.date, meters: parsedNum, boreholeNumber: item.boreholeNumber });
+                                    setEditingDrillId(null);
                                     setEditMetersFieldValue('');
                                   }}
                                   className="p-1 text-emerald-600 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 rounded transition-colors cursor-pointer"
@@ -489,7 +489,7 @@ export const Dashboard: React.FC = () => {
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setEditingDrillDate(null);
+                                    setEditingDrillId(null);
                                     setEditMetersFieldValue('');
                                   }}
                                   className="p-1 text-rose-500 hover:text-rose-450 hover:bg-rose-50 dark:hover:bg-rose-950/25 rounded transition-colors cursor-pointer"
@@ -503,7 +503,7 @@ export const Dashboard: React.FC = () => {
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setEditingDrillDate(item.date);
+                                    setEditingDrillId(item.id);
                                     setEditMetersFieldValue(item.meters.toString());
                                   }}
                                   className="p-1 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-slate-800 rounded transition-colors cursor-pointer"
@@ -513,7 +513,7 @@ export const Dashboard: React.FC = () => {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => deleteDrillingEntry(item.date)}
+                                  onClick={() => deleteDrillingEntry(item.id)}
                                   className="p-1 text-gray-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded transition-colors cursor-pointer"
                                   title="Delete Record"
                                 >

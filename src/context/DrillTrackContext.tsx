@@ -38,8 +38,8 @@ interface DrillTrackContextType {
   editSite: (id: string, newName: string) => Promise<boolean>;
   deleteSite: (id: string) => Promise<void>;
   addDrillingEntry: (entry: DrillingEntry) => void;
-  editDrillingEntry: (originalDate: string, entry: DrillingEntry) => void;
-  deleteDrillingEntry: (date: string) => void;
+  editDrillingEntry: (entryId: string, entry: DrillingEntry) => void;
+  deleteDrillingEntry: (entryId: string) => void;
   addCategory: (name: string) => Promise<Category | null>;
   editCategory: (id: string, name: string) => Promise<boolean>;
   deleteCategory: (id: string) => Promise<boolean>;
@@ -509,15 +509,7 @@ export const DrillTrackPropsProvider: React.FC<{ children: React.ReactNode }> = 
           updatedAt: created.data.updatedAt
         };
 
-        setDrillingEntries(prev => {
-          const idx = prev.findIndex(item => item.siteId === record.siteId && item.date === record.date);
-          if (idx !== -1) {
-            const copy = [...prev];
-            copy[idx] = record;
-            return copy;
-          }
-          return [...prev, record];
-        });
+        setDrillingEntries(prev => [...prev, record]);
         addToast(`Saved drilling on ${record.date.split('-').reverse().join('/')}: ${record.meters}m`, 'success');
       } catch {
         addToast('Backend drilling entry failed. Check API session.', 'error');
@@ -525,7 +517,7 @@ export const DrillTrackPropsProvider: React.FC<{ children: React.ReactNode }> = 
     })();
   };
 
-  const editDrillingEntry = (originalDate: string, entry: DrillingEntry) => {
+  const editDrillingEntry = (entryId: string, entry: DrillingEntry) => {
     if (!hasAccessPermission()) return;
     if (entry.meters < 0) {
       addToast('Drilling meters must be a positive number', 'error');
@@ -533,7 +525,7 @@ export const DrillTrackPropsProvider: React.FC<{ children: React.ReactNode }> = 
     }
     (async () => {
       try {
-        const existing = drillingEntries.find(item => item.siteId === entry.siteId && item.date === originalDate);
+        const existing = drillingEntries.find(item => item.id === entryId);
         if (!existing?.id) {
           addToast('Cannot update drilling: missing backend id', 'error');
           return;
@@ -554,16 +546,7 @@ export const DrillTrackPropsProvider: React.FC<{ children: React.ReactNode }> = 
           updatedBy: user?.username || 'operator',
           updatedAt: updated.data.updatedAt
         };
-        setDrillingEntries(prev => {
-          const filtered = prev.filter(item => !(item.siteId === record.siteId && item.date === originalDate));
-          const doubleCheckIndex = filtered.findIndex(item => item.siteId === record.siteId && item.date === record.date);
-          if (doubleCheckIndex !== -1) {
-            filtered[doubleCheckIndex] = record;
-          } else {
-            filtered.push(record);
-          }
-          return filtered;
-        });
+        setDrillingEntries(prev => prev.map(item => (item.id === record.id ? record : item)));
         addToast('Drilling log updated', 'success');
       } catch {
         addToast('Backend drilling update failed. Check API session.', 'error');
@@ -571,18 +554,18 @@ export const DrillTrackPropsProvider: React.FC<{ children: React.ReactNode }> = 
     })();
   };
 
-  const deleteDrillingEntry = (date: string) => {
+  const deleteDrillingEntry = (entryId: string) => {
     if (!hasAccessPermission()) return;
     (async () => {
       try {
-        const existing = drillingEntries.find(item => item.siteId === activeSiteId && item.date === date);
+        const existing = drillingEntries.find(item => item.id === entryId);
         if (!existing?.id) {
           addToast('Cannot delete drilling: missing backend id', 'error');
           return;
         }
         const token = await ensureBackendSession();
         await drillingApi.remove(token, existing.id);
-        setDrillingEntries(prev => prev.filter(item => !(item.siteId === activeSiteId && item.date === date)));
+        setDrillingEntries(prev => prev.filter(item => item.id !== entryId));
         addToast('Drilling log deleted', 'info');
       } catch {
         addToast('Backend drilling deletion failed. Check API session.', 'error');
